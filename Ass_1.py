@@ -13,11 +13,13 @@ class ChessboardFinder():
         _,self.binary  = cv.threshold(self.grayscale, 127, 255, cv.THRESH_BINARY)
         self.boardsize = (7,7)
         self.detected = False
+        self.corners = []
 
     def cornerFinder(self): # Find and draw corners automatically
-        self.detected, corners = cv.findChessboardCorners(self.grayscale, self.boardsize, None) #corners from bottom-left to top-right
+        self.detected, self.corners = cv.findChessboardCorners(self.grayscale, self.boardsize, None) #corners from bottom-left to top-right
         if self.detected: 
-            cv.drawChessboardCorners(self.image, (7,7), corners, self.detected)
+            cv.drawChessboardCorners(self.image, (7,7), self.corners, self.detected)
+            #print(self.corners)
             #TODO: point refinement
 
     def showImage(self):
@@ -29,18 +31,19 @@ class ChessboardFinder():
         cv.waitKey(0)
         cv.destroyAllWindows()
 
-# leftclick event called by setMouseCallback
 corner_points = []
 def leftClick(event, x, y, flags, params): 
+    # Draw point and save to corner_points
     if event == cv.EVENT_LBUTTONDOWN:
         print(x,' ',y)
         corner_points.append([x,y])
         cv.circle(params,(x,y),5, (0,0,255), -1)
         cv.imshow('Image', params)
 
+        # Attempt at drawing chessboard points, incorrect: does not take into account depth of chessboard
+        # Reproduce Array with 2d points of findchessboardcorners and input to drawchessboardcorners?
         if len(corner_points) == 4:
             points = findImgPoints(corner_points)
-            #cv.drawChessboardCorners(params,(7,7),np.array(points),False)
             for i in points:
                 sq = np.squeeze(i)
                 point = (int(sq[0]), int(sq[1]))
@@ -49,6 +52,7 @@ def leftClick(event, x, y, flags, params):
                 cv.imshow('Image', params)          
     return
 
+#incorrect: does not take into account depth of chessboard
 def findImgPoints(cornerpoints):
     imgpoints = []
     for i in range(7):
@@ -61,8 +65,23 @@ def findImgPoints(cornerpoints):
     print(np.array(imgpoints))
     return imgpoints
 
-#findImgPoints([[372,435], [498,136], [1065,446], [936,142]])
-#showImage(img)
+class Chessboard():
+    def __init__(self, boardsize, squarelength):
+        self.boardsize = boardsize
+        self.squarelength = squarelength
+
+        objp = np.zeros((7*7,3), np.float32)
+        objp[:,:2] = np.mgrid[0:7,0:7].T.reshape(-1,2)
+        self.objpoints = objp
+
+# Read image
+# Find imgpoints (corners)
+# Find objpoints (chessboardsize, squarelength)
+# Pass imgpoints & objpoints to calibration function
 cbf = ChessboardFinder(img)
 cbf.cornerFinder()
-cbf.showImage()
+imgpoints = cbf.corners
+chessboard = Chessboard((7,7),1)
+print(np.array(chessboard.objpoints))
+ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera([chessboard.objpoints], [imgpoints], cbf.grayscale.shape[::-1], None, None)
+print(mtx)
