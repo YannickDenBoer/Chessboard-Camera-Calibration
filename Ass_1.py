@@ -61,9 +61,9 @@ class Chessboard():
         self.boardsize = boardsize
         self.squarelength = squarelength
 
-        objp = np.zeros((boardsize[0]*boardsize[1],3), np.float32)
-        objp[:,:2] = np.mgrid[0:boardsize[1],0:boardsize[0]].T.reshape(-1,2)
-        objp *= squarelength
+        objp = np.zeros((boardsize[1]*boardsize[0],3), np.float32)
+        objp[:,:2] = np.mgrid[0:boardsize[0],0:boardsize[1]].T.reshape(-1,2)
+        #objp *= squarelength
         self.objpoints = objp
 
 # takes a range of images (first to last) and the chessboard, and finds the camera calibration info
@@ -81,29 +81,35 @@ def calibrate(first, last, chessboard):
         allimgpoints.append(cbf.imgpoints)
 
     ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera(allobjpoints, allimgpoints, cbf.grayscale.shape[::-1], None, None)
-    return cameraMatrix, rvecs, tvecs, dist
+    return ret, cameraMatrix, dist, rvecs, tvecs
     #cameraPosition = np.matmul(np.array[rvecs,tvecs],)
 
+def drawAxes(img, corners, imgpts):
+    def tupleofInts(arr):
+        return tuple(int(x) for x in arr)
+    corner = tupleofInts(corners[0].ravel())
+    img = cv.line(img,corner,tupleofInts(imgpts[0].ravel()),(255,0,0),2)
+    img = cv.line(img,corner,tupleofInts(imgpts[1].ravel()),(0,255,0),2)
+    img = cv.line(img,corner,tupleofInts(imgpts[2].ravel()),(0,0,255),2)
+    return img
+
 #testing phase
-chessboard = Chessboard((9,6),25)
-cameramatrix, rvecs, tvecs, dist = calibrate(1,1, chessboard)
-testimg = cv.imread("Images/1.jpg")
+chessboard = Chessboard((9,6),1)
+ret, cameraMatrix, dist, rvecs, tvecs = calibrate(1,3,chessboard)
+print(dist)
+print(ret)
+
+
+axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
+
+testimg = cv.imread("Images/9.jpg")
 cbf = ChessboardFinder(testimg,chessboard)
-imgpoints = cbf.cornerFinder()
+corners = cbf.cornerFinder()
 
-#ret, rvec, tvec = cv.solvePnP(chessboard.objpoints, imgpoints, cameramatrix, dist)
+_,rvecs, tvecs = cv.solvePnP(chessboard.objpoints, corners, cameraMatrix, dist)
+imgpts, _ = cv.projectPoints(axis, rvecs, tvecs, cameraMatrix, dist)
 
-imgpoints, _ = cv.projectPoints(chessboard.objpoints[0], rvecs[0], tvecs[0], cameramatrix, dist) #? 
-print(chessboard.objpoints[0])
-print(imgpoints)
-#print(np.squeeze(imgpoints[0])[0].dtype)
-
-
-
-point = (int(np.squeeze(imgpoints)[0]),int(np.squeeze(imgpoints)[1]))
-print(point)
-
-cv.imshow("image:",testimg)
-cv.circle(testimg,point,5, (0,0,255), -1)
+testimg = drawAxes(testimg,corners,imgpts)
 cv.imshow("image:",testimg)
 cv.waitKey(0)
+cv.destroyAllWindows()
