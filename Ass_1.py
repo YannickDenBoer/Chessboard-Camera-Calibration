@@ -16,8 +16,10 @@ class ChessboardFinder():
 
     def cornerFinder(self): # Find and draw corners automatically
         self.detected, self.imgpoints = cv.findChessboardCorners(self.grayscale, self.boardsize, None) #corners from bottom-left to top-right
-        if self.detected: 
+        if self.detected:
             cv.drawChessboardCorners(self.image, self.boardsize, self.imgpoints, self.detected)
+            for imgp in self.imgpoints:
+                print(imgp)
             #TODO: point refinement
 
     def showImage(self):
@@ -45,8 +47,8 @@ class ChessboardFinder():
 
     def findImgPoints(self, cornerpoints):
         imgpoints = []
-        for j in range(self.boardsize[0]):
-            for i in range(self.boardsize[1]):
+        for i in range(self.boardsize[1]):
+            for j in range(self.boardsize[0]-1, -1, -1):
                 a,b,c,d = np.array(cornerpoints[0:4])
                 p = a+i/(self.boardsize[1]-1) * (b-a)
                 q = c+i/(self.boardsize[1]-1) * (d-c)
