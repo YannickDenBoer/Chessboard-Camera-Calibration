@@ -1,6 +1,7 @@
 import cv2 as cv
 import numpy as np
 import os
+import pickle
 
 class CameraCalibration():
     def __init__(self, path, chessboard):
@@ -63,7 +64,7 @@ class CameraCalibration():
             self.corners = []
             img = cv.imread(f)
             self.cornerFinder(img)
-            if False: #Put True for troubleshooting
+            if False: #True shows the cornerpoints of each image
                 cv.imshow("Image", img)
                 cv.waitKey(0)
             allobjpoints.append(chessboard.objpoints)
@@ -78,35 +79,59 @@ class Chessboard():
 
         objp = np.zeros((boardsize[1]*boardsize[0],3), np.float32)
         objp[:,:2] = np.mgrid[0:boardsize[0],0:boardsize[1]].T.reshape(-1,2)
-        #objp *= squarelength
         self.objpoints = objp
 
-def drawAxes(img, corners, imgpts):
-    def tupleofInts(arr):
-        return tuple(int(x) for x in arr)
-    corner = tupleofInts(corners[0].ravel())
-    img = cv.line(img,corner,tupleofInts(imgpts[0].ravel()),(255,0,0),2)
-    img = cv.line(img,corner,tupleofInts(imgpts[1].ravel()),(0,255,0),2)
-    img = cv.line(img,corner,tupleofInts(imgpts[2].ravel()),(0,0,255),2)
-    return img
+class D3:
+    def point(arr):
+        return tuple(int(x) for x in arr.squeeze())
+
+    def drawAxes(img, imgpts):
+        corner = D3.point(imgpts[0])
+        img = cv.line(img,corner,D3.point(imgpts[1]),(255,0,0),2)
+        img = cv.line(img,corner,D3.point(imgpts[2]),(0,255,0),2)
+        img = cv.line(img,corner,D3.point(imgpts[3]),(0,0,255),2)
+        return img
+    
+    def drawBox(img, imgpts):
+        for i in range(4):
+            img = cv.line(img,D3.point(imgpts[i]),D3.point(imgpts[i+4]),(0,255,255),1)
+            for j in range(i,4):
+                if not ((i==0 and j==3) or (i==1 and j==2)):
+                    img = cv.line(img,D3.point(imgpts[i]),D3.point(imgpts[j]),(0,255,255),1)
+                    img = cv.line(img,D3.point(imgpts[i+4]),D3.point(imgpts[j+4]),(0,255,255),1)
+        return img
+
+axis = np.float32([[0,0,0], [3,0,0], [0,3,0], [0,0,-3]])
+box = np.float32([[0,0,0],[2,0,0],[0,2,0],[2,2,0],[0,0,-2],[2,0,-2],[0,2,-2],[2,2,-2]])
 
 #calibration
 path = "Images"
 chessboard = Chessboard((9,6),1)
-cc = CameraCalibration(path,chessboard)
-cameraMatrix, dist, rvecs, tvecs = cc.calibrate()
-print(cameraMatrix)
 
+if False: #True reruns the calibration and saves new intrinsic values
+    cc = CameraCalibration(path,chessboard)
+    cameraMatrix, dist, rvecs, tvecs = cc.calibrate()
+    print(cameraMatrix)
+    with open('intrinsics.pckl', 'wb') as f: #Store intrinsic camera values
+        pickle.dump([cameraMatrix, dist, rvecs, tvecs], f)
+        
 #testing phase
-axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
-testimg = cv.imread("Images/23.jpg")
+with open('intrinsics.pckl', 'rb') as f: #Load intrinsic camera values
+    cameraMatrix, dist, rvecs,tvecs = pickle.load(f)
+
+
+testimg = cv.imread("Images/2.jpg")
+
+#Finds corners and rotation/translation vectors
 cc = CameraCalibration("",chessboard)
 corners = cc.cornerFinder(testimg)
-
 _, rvecs, tvecs = cv.solvePnP(chessboard.objpoints, corners, cameraMatrix, dist)
-imgpoints, _ = cv.projectPoints(axis, rvecs, tvecs, cameraMatrix, dist)
 
-testimg = drawAxes(testimg,corners,imgpoints)
+imgpoints, _ = cv.projectPoints(box, rvecs, tvecs, cameraMatrix, dist)
+testimg = D3.drawBox(testimg,imgpoints)
+
+imgpoints, _ = cv.projectPoints(axis, rvecs, tvecs, cameraMatrix, dist)
+testimg = D3.drawAxes(testimg,imgpoints)
 cv.imshow("image:",testimg)
 cv.waitKey(0)
 cv.destroyAllWindows()
