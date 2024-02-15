@@ -71,3 +71,5 @@ cbf.showImage()
 ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera([chessboard.objpoints], [cbf.imgpoints], cbf.grayscale.shape[::-1], None, None)
 print(cameraMatrix)
 #cameraPosition = np.matmul(np.array[rvecs,tvecs],)
+
+#failed calibrations: 23
