@@ -1,47 +1,44 @@
 import cv2 as cv
 import numpy as np
+import os
 
-class ChessboardFinder():
-    def __init__(self, file, chessboard):
-        self.image = file
-        self.grayscale = cv.cvtColor(self.image, cv.COLOR_BGR2GRAY)
-        _,self.binary  = cv.threshold(self.grayscale, 127, 255, cv.THRESH_BINARY)
+class CameraCalibration():
+    def __init__(self, path, chessboard):
+        self.path = path
+        self.chessboard = chessboard
         self.boardsize = chessboard.boardsize
-        self.detected = False
-        self.imgpoints = []
-        self.clicked_corners = []
+        self.corners = []
+        self.gray = []
 
-    def cornerFinder(self): # Find and draw corners automatically
-        self.detected, self.imgpoints = cv.findChessboardCorners(self.grayscale, self.boardsize, None) #corners from bottom-left to top-right
-        if self.detected:
-            cv.drawChessboardCorners(self.image, self.boardsize, self.imgpoints, self.detected)
-            return self.imgpoints
-            #TODO: point refinement
-
-    def showImage(self):
-        cv.imshow("Image", self.image)
-        if not self.detected: # manual calibration
-            cv.putText(self.image,"No chessboard detected, please left-click the four corners",(0,30),cv.FONT_HERSHEY_PLAIN,2,(255,0,0),2,cv.LINE_AA) #placeholder
-            cv.imshow('Image',self.image)
-            cv.setMouseCallback('Image',self.leftClick, self.image)
-
-        cv.waitKey(0)
-        cv.destroyAllWindows()
-
+    def cornerFinder(self, image):
+        image_gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+        self.gray = image_gray
+        detected, self.corners = cv.findChessboardCorners(image_gray, chessboard.boardsize, None) #corners from bottom-left to top-right
+        if detected:
+            cv.drawChessboardCorners(image, chessboard.boardsize, self.corners,True)
+        else: # manual calibration
+            clicked_corners = []
+            cv.putText(image,"No chessboard detected, please left-click the four corners",(0,30), cv.FONT_HERSHEY_PLAIN, 2, (255,0,0), 2, cv.LINE_AA) #TODO: placeholder
+            cv.imshow('Image', image)
+            cv.setMouseCallback('Image', self.leftClick, [image, clicked_corners])
+            cv.waitKey(0)
+            cv.destroyAllWindows
+        return self.corners
+    
     def leftClick(self, event, x, y, flags, params): 
         # Draw point and save to corner_points
-        if len(self.clicked_corners) <= 3:
+        if len(params[1]) < 4:
             if event == cv.EVENT_LBUTTONDOWN:
-                self.clicked_corners.append([x,y])
-                cv.circle(params,(x,y),5, (0,0,255), -1)
-                cv.imshow('Image', params)
+                params[1].append([x,y])
+                cv.circle(params[0], (x,y), 5, (0,0,255), -1)
+                cv.imshow("Image", params[0])
 
                 # Attempt at drawing chessboard points #TODO: does not currently take into account depth of chessboard
-                if len(self.clicked_corners) == 4:
-                    self.imgpoints = np.array(self.findImgPoints(self.clicked_corners)).astype('float32')
-                    cv.drawChessboardCorners(params, self.boardsize,self.imgpoints,True)
-                    cv.imshow("Image", params)
-                    cv.waitKey(500)
+                if len(params[1]) == 4:
+                    self.corners = np.array(self.findImgPoints(params[1])).astype('float32')
+                    cv.drawChessboardCorners(params[0], chessboard.boardsize, self.corners,True)
+                    cv.imshow("Image", params[0])
+                    cv.waitKey(0)
                     cv.destroyAllWindows()
 
     def findImgPoints(self, cornerpoints):
@@ -55,6 +52,24 @@ class ChessboardFinder():
                 point = p+j/(self.boardsize[0]-1) *(q-p) #/7
                 imgpoints.append([point])
         return imgpoints
+    
+    # takes a range of images (first to last) and the chessboard, and finds the camera calibration info
+    def calibrate(self):
+        allobjpoints = []
+        allimgpoints = []
+        for filename in os.listdir(os.path.join(os.getcwd(),self.path)):
+            f = os.path.join(path,filename)
+            print(f)
+            self.corners = []
+            img = cv.imread(f)
+            self.cornerFinder(img)
+            if False: #Put True for troubleshooting
+                cv.imshow("Image", img)
+                cv.waitKey(0)
+            allobjpoints.append(chessboard.objpoints)
+            allimgpoints.append(self.corners)
+        _, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera(allobjpoints, allimgpoints, self.gray.shape[::-1], None, None)
+        return cameraMatrix, dist, rvecs, tvecs
 
 class Chessboard():
     def __init__(self, boardsize, squarelength):
@@ -66,24 +81,6 @@ class Chessboard():
         #objp *= squarelength
         self.objpoints = objp
 
-# takes a range of images (first to last) and the chessboard, and finds the camera calibration info
-def calibrate(first, last, chessboard):
-    allobjpoints = []
-    allimgpoints = []
-    for i in range(first, last+1):
-        filename = f"Images/{i}.jpg"
-        img = cv.imread(filename)
-        cbf = ChessboardFinder(img, chessboard)
-        # if image should be automatically calibrated, use cornerFinder()
-        cbf.cornerFinder()
-        cbf.showImage()
-        allobjpoints.append(chessboard.objpoints)
-        allimgpoints.append(cbf.imgpoints)
-
-    ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera(allobjpoints, allimgpoints, cbf.grayscale.shape[::-1], None, None)
-    return ret, cameraMatrix, dist, rvecs, tvecs
-    #cameraPosition = np.matmul(np.array[rvecs,tvecs],)
-
 def drawAxes(img, corners, imgpts):
     def tupleofInts(arr):
         return tuple(int(x) for x in arr)
@@ -93,23 +90,23 @@ def drawAxes(img, corners, imgpts):
     img = cv.line(img,corner,tupleofInts(imgpts[2].ravel()),(0,0,255),2)
     return img
 
-#testing phase
+#calibration
+path = "Images"
 chessboard = Chessboard((9,6),1)
-ret, cameraMatrix, dist, rvecs, tvecs = calibrate(1,3,chessboard)
-print(dist)
-print(ret)
+cc = CameraCalibration(path,chessboard)
+cameraMatrix, dist, rvecs, tvecs = cc.calibrate()
+print(cameraMatrix)
 
-
+#testing phase
 axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
+testimg = cv.imread("Images/23.jpg")
+cc = CameraCalibration("",chessboard)
+corners = cc.cornerFinder(testimg)
 
-testimg = cv.imread("Images/9.jpg")
-cbf = ChessboardFinder(testimg,chessboard)
-corners = cbf.cornerFinder()
+_, rvecs, tvecs = cv.solvePnP(chessboard.objpoints, corners, cameraMatrix, dist)
+imgpoints, _ = cv.projectPoints(axis, rvecs, tvecs, cameraMatrix, dist)
 
-_,rvecs, tvecs = cv.solvePnP(chessboard.objpoints, corners, cameraMatrix, dist)
-imgpts, _ = cv.projectPoints(axis, rvecs, tvecs, cameraMatrix, dist)
-
-testimg = drawAxes(testimg,corners,imgpts)
+testimg = drawAxes(testimg,corners,imgpoints)
 cv.imshow("image:",testimg)
 cv.waitKey(0)
 cv.destroyAllWindows()
