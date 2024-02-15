@@ -15,8 +15,7 @@ class ChessboardFinder():
         self.detected, self.imgpoints = cv.findChessboardCorners(self.grayscale, self.boardsize, None) #corners from bottom-left to top-right
         if self.detected:
             cv.drawChessboardCorners(self.image, self.boardsize, self.imgpoints, self.detected)
-            for imgp in self.imgpoints:
-                print(imgp)
+            return self.imgpoints
             #TODO: point refinement
 
     def showImage(self):
@@ -64,6 +63,7 @@ class Chessboard():
 
         objp = np.zeros((boardsize[0]*boardsize[1],3), np.float32)
         objp[:,:2] = np.mgrid[0:boardsize[1],0:boardsize[0]].T.reshape(-1,2)
+        objp *= squarelength
         self.objpoints = objp
 
 # takes a range of images (first to last) and the chessboard, and finds the camera calibration info
@@ -75,14 +75,35 @@ def calibrate(first, last, chessboard):
         img = cv.imread(filename)
         cbf = ChessboardFinder(img, chessboard)
         # if image should be automatically calibrated, use cornerFinder()
-        #cbf.cornerFinder()
+        cbf.cornerFinder()
         cbf.showImage()
         allobjpoints.append(chessboard.objpoints)
         allimgpoints.append(cbf.imgpoints)
 
     ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera(allobjpoints, allimgpoints, cbf.grayscale.shape[::-1], None, None)
-    print(cameraMatrix)
+    return cameraMatrix, rvecs, tvecs, dist
     #cameraPosition = np.matmul(np.array[rvecs,tvecs],)
 
-chessboard = Chessboard((9,6),1)
-calibrate(1, 2, chessboard)
+#testing phase
+chessboard = Chessboard((9,6),25)
+cameramatrix, rvecs, tvecs, dist = calibrate(1,1, chessboard)
+testimg = cv.imread("Images/1.jpg")
+cbf = ChessboardFinder(testimg,chessboard)
+imgpoints = cbf.cornerFinder()
+
+#ret, rvec, tvec = cv.solvePnP(chessboard.objpoints, imgpoints, cameramatrix, dist)
+
+imgpoints, _ = cv.projectPoints(chessboard.objpoints[0], rvecs[0], tvecs[0], cameramatrix, dist) #? 
+print(chessboard.objpoints[0])
+print(imgpoints)
+#print(np.squeeze(imgpoints[0])[0].dtype)
+
+
+
+point = (int(np.squeeze(imgpoints)[0]),int(np.squeeze(imgpoints)[1]))
+print(point)
+
+cv.imshow("image:",testimg)
+cv.circle(testimg,point,5, (0,0,255), -1)
+cv.imshow("image:",testimg)
+cv.waitKey(0)
