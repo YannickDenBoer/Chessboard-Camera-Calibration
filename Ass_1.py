@@ -1,9 +1,6 @@
 import cv2 as cv
 import numpy as np
 
-filename = "Images/1.jpg"
-img = cv.imread(filename)
-
 class ChessboardFinder():
     def __init__(self, file, chessboard):
         self.image = file
@@ -28,6 +25,7 @@ class ChessboardFinder():
             cv.putText(self.image,"No chessboard detected, please left-click the four corners",(0,30),cv.FONT_HERSHEY_PLAIN,2,(255,0,0),2,cv.LINE_AA) #placeholder
             cv.imshow('Image',self.image)
             cv.setMouseCallback('Image',self.leftClick, self.image)
+
         cv.waitKey(0)
         cv.destroyAllWindows()
 
@@ -44,11 +42,14 @@ class ChessboardFinder():
                     self.imgpoints = np.array(self.findImgPoints(self.clicked_corners)).astype('float32')
                     cv.drawChessboardCorners(params, self.boardsize,self.imgpoints,True)
                     cv.imshow("Image", params)
+                    cv.waitKey(500)
+                    cv.destroyAllWindows()
 
     def findImgPoints(self, cornerpoints):
         imgpoints = []
         for i in range(self.boardsize[1]):
             for j in range(self.boardsize[0]-1, -1, -1):
+                # order: bottom left, top left, bottom right, top right
                 a,b,c,d = np.array(cornerpoints[0:4])
                 p = a+i/(self.boardsize[1]-1) * (b-a)
                 q = c+i/(self.boardsize[1]-1) * (d-c)
@@ -65,11 +66,23 @@ class Chessboard():
         objp[:,:2] = np.mgrid[0:boardsize[1],0:boardsize[0]].T.reshape(-1,2)
         self.objpoints = objp
 
-chessboard = Chessboard((9,6),1)
-cbf = ChessboardFinder(img, chessboard)
-#cbf.cornerFinder()
-cbf.showImage()
+# takes a range of images (first to last) and the chessboard, and finds the camera calibration info
+def calibrate(first, last, chessboard):
+    allobjpoints = []
+    allimgpoints = []
+    for i in range(first, last+1):
+        filename = f"Images/{i}.jpg"
+        img = cv.imread(filename)
+        cbf = ChessboardFinder(img, chessboard)
+        # if image should be automatically calibrated, use cornerFinder()
+        #cbf.cornerFinder()
+        cbf.showImage()
+        allobjpoints.append(chessboard.objpoints)
+        allimgpoints.append(cbf.imgpoints)
 
-ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera([chessboard.objpoints], [cbf.imgpoints], cbf.grayscale.shape[::-1], None, None)
-print(cameraMatrix)
-#cameraPosition = np.matmul(np.array[rvecs,tvecs],)
+    ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera(allobjpoints, allimgpoints, cbf.grayscale.shape[::-1], None, None)
+    print(cameraMatrix)
+    #cameraPosition = np.matmul(np.array[rvecs,tvecs],)
+
+chessboard = Chessboard((9,6),1)
+calibrate(1, 2, chessboard)
