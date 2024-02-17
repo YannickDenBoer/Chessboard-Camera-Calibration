@@ -2,11 +2,13 @@ import cv2 as cv
 import numpy as np
 from manim import *
 from manim.utils.file_ops import open_file as open_media_file
+import os
+import pickle
 
 # obtain the camera position in world space and render manim scene
-def run3dplot(objpoints, cbf, corners):
-    ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera([objpoints], [cbf.imgpoints], cbf.grayscale.shape[::-1], None, None)
-    _,rvecs, tvecs = cv.solvePnP(objpoints, corners, cameraMatrix, dist)
+def run3dplot(objpoints, imgpoints, gray):
+    ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera([objpoints], [imgpoints], gray.shape[::-1], None, None)
+    _,rvecs, tvecs = cv.solvePnP(objpoints, imgpoints, cameraMatrix, dist)
     rotM = cv.Rodrigues(rvecs)[0]
     initCamPos = -np.matrix(rotM).T * np.matrix(tvecs)
     global camPos
@@ -37,47 +39,52 @@ class Plot3D(ThreeDScene):
         self.add(Arrow3D(remapped_cp, remapped_pts[53], thickness=0.03, color=YELLOW))
         self.add(Arrow3D(remapped_cp, remapped_pts[45], thickness=0.03, color=GREEN))
 
-class ChessboardFinder():
-    def __init__(self, file, chessboard):
-        self.image = file
-        self.grayscale = cv.cvtColor(self.image, cv.COLOR_BGR2GRAY)
-        _,self.binary  = cv.threshold(self.grayscale, 127, 255, cv.THRESH_BINARY)
+class CameraCalibration():
+    def __init__(self, path, chessboard):
+        self.path = path
+        self.chessboard = chessboard
         self.boardsize = chessboard.boardsize
-        self.detected = False
-        self.imgpoints = []
-        self.clicked_corners = []
+        self.corners = []
+        self.gray = []
 
-    def cornerFinder(self): # Find and draw corners automatically
-        self.detected, self.imgpoints = cv.findChessboardCorners(self.grayscale, self.boardsize, None) #corners from bottom-left to top-right
-        if self.detected:
-            cv.drawChessboardCorners(self.image, self.boardsize, self.imgpoints, self.detected)
-            return self.imgpoints
-            #TODO: point refinement
-
-    def showImage(self):
-        cv.imshow("Image", self.image)
-        if not self.detected: # manual calibration
-            cv.putText(self.image,"No chessboard detected, please left-click the four corners",(0,30),cv.FONT_HERSHEY_PLAIN,2,(255,0,0),2,cv.LINE_AA) #placeholder
-            cv.imshow('Image',self.image)
-            cv.setMouseCallback('Image',self.leftClick, self.image)
-
-        cv.waitKey(0)
-        cv.destroyAllWindows()
-
+    def cornerFinder(self, image, isvideo=False, scaling=1):
+        image_gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+        self.gray = image_gray
+        detected, self.corners = cv.findChessboardCorners(image_gray, chessboard.boardsize, None) #corners from bottom-left to top-right
+        if not isvideo:
+            if detected:
+                cv.drawChessboardCorners(image, chessboard.boardsize, self.corners,True)
+            else: # manual calibration
+                clicked_corners = []
+                cv.putText(image,"No chessboard detected, please left-click the four corners",(0,30), cv.FONT_HERSHEY_PLAIN, 2, (255,0,0), 2, cv.LINE_AA) #TODO: placeholder
+                cv.imshow('Image', image)
+                cv.setMouseCallback('Image', self.leftClick, [image, clicked_corners])
+                cv.waitKey(0)
+                cv.destroyAllWindows
+        return self.corners, detected
+    
     def leftClick(self, event, x, y, flags, params): 
         # Draw point and save to corner_points
-        if len(self.clicked_corners) <= 3:
+        if len(params[1]) < 4:
             if event == cv.EVENT_LBUTTONDOWN:
-                self.clicked_corners.append([x,y])
-                cv.circle(params,(x,y),5, (0,0,255), -1)
-                cv.imshow('Image', params)
+                params[1].append([x,y])
+                cv.circle(params[0], (x,y), 5, (0,0,255), -1)
+                cv.imshow("Image", params[0])
 
                 # Attempt at drawing chessboard points #TODO: does not currently take into account depth of chessboard
-                if len(self.clicked_corners) == 4:
-                    self.imgpoints = np.array(self.findImgPoints(self.clicked_corners)).astype('float32')
-                    cv.drawChessboardCorners(params, self.boardsize,self.imgpoints,True)
-                    cv.imshow("Image", params)
-                    cv.waitKey(500)
+                if len(params[1]) == 4:
+                    #self.corners = np.array(self.findImgPoints(params[1])).astype('float32')
+                    
+                    objcorners = np.array([[chessboard.boardsize[0]-1,0], [chessboard.boardsize[0]-1,chessboard.boardsize[1]-1], [0,0], [0, chessboard.boardsize[1]-1]],dtype=np.float32) #br, tl, bl, tr
+                    objpoints2d = np.array([chessboard.objpoints[:,:2]])
+
+                    destpts = np.array(params[1],dtype=np.float32)
+                    mat = cv.getPerspectiveTransform(objcorners,destpts)
+                    self.corners = cv.perspectiveTransform(objpoints2d,mat)
+                    
+                    cv.drawChessboardCorners(params[0], chessboard.boardsize, self.corners,True)
+                    cv.imshow("Image", params[0])
+                    cv.waitKey(0)
                     cv.destroyAllWindows()
 
     def findImgPoints(self, cornerpoints):
@@ -85,12 +92,32 @@ class ChessboardFinder():
         for i in range(self.boardsize[1]):
             for j in range(self.boardsize[0]-1, -1, -1):
                 # order: bottom left, top left, bottom right, top right
-                a,b,c,d = np.array(cornerpoints[0:4])
+                a,b,c,d = np.array(cornerpoints[0:4]) #bl, tl, br, tr
                 p = a+i/(self.boardsize[1]-1) * (b-a)
                 q = c+i/(self.boardsize[1]-1) * (d-c)
                 point = p+j/(self.boardsize[0]-1) *(q-p) #/7
                 imgpoints.append([point])
         return imgpoints
+    
+    # takes a range of images (first to last) and the chessboard, and finds the camera calibration info
+    def calibrate(self):
+        allobjpoints = []
+        allimgpoints = []
+        for filename in os.listdir(os.path.join(os.getcwd(),self.path)):
+            f = os.path.join(path,filename)
+            print(f)
+            self.corners = []
+            img = cv.imread(f)
+            self.cornerFinder(img)
+            if False: #True shows the cornerpoints of each image
+                cv.imshow("Image", img)
+                cv.waitKey(0)
+            allobjpoints.append(chessboard.objpoints)
+            allimgpoints.append(self.corners)
+            # run3dplot(chessboard.objpoints, self.corners, self.gray)
+
+        _, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera(allobjpoints, allimgpoints, self.gray.shape[::-1], None, None)
+        return cameraMatrix, dist, rvecs, tvecs
 
 class Chessboard():
     def __init__(self, boardsize, squarelength):
@@ -99,55 +126,86 @@ class Chessboard():
 
         objp = np.zeros((boardsize[1]*boardsize[0],3), np.float32)
         objp[:,:2] = np.mgrid[0:boardsize[0],0:boardsize[1]].T.reshape(-1,2)
-        #objp *= squarelength
         self.objpoints = objp
 
-# takes a range of images (first to last) and the chessboard, and finds the camera calibration info
-def calibrate(first, last, chessboard):
-    allobjpoints = []
-    allimgpoints = []
-    for i in range(first, last+1):
-        filename = f"Images/{i}.jpg"
-        img = cv.imread(filename)
-        cbf = ChessboardFinder(img, chessboard)
-        # if image should be automatically calibrated, use cornerFinder()
-        corners = cbf.cornerFinder()
-        cbf.showImage()
-        allobjpoints.append(chessboard.objpoints)
-        allimgpoints.append(cbf.imgpoints)
-        # 3d plot stuff (runs slow)
-        run3dplot(chessboard.objpoints, cbf, corners)
+class D3:
+    def point(arr):
+        return tuple(int(x) for x in arr.squeeze())
 
-    ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera(allobjpoints, allimgpoints, cbf.grayscale.shape[::-1], None, None)
+    def drawAxes(img, imgpts):
+        corner = D3.point(imgpts[0])
+        img = cv.line(img,corner,D3.point(imgpts[1]),(255,0,0),2)
+        img = cv.line(img,corner,D3.point(imgpts[2]),(0,255,0),2)
+        img = cv.line(img,corner,D3.point(imgpts[3]),(0,0,255),2)
+        return img
+    
+    def drawBox(img, imgpts):
+        for i in range(4):
+            img = cv.line(img,D3.point(imgpts[i]),D3.point(imgpts[i+4]),(0,255,255),1)
+            for j in range(i,4):
+                if not ((i==0 and j==3) or (i==1 and j==2)):
+                    img = cv.line(img,D3.point(imgpts[i]),D3.point(imgpts[j]),(0,255,255),1)
+                    img = cv.line(img,D3.point(imgpts[i+4]),D3.point(imgpts[j+4]),(0,255,255),1)
+        return img
 
-    return ret, cameraMatrix, dist, rvecs, tvecs
-    #cameraPosition = np.matmul(np.array[rvecs,tvecs],)
+axis = np.float32([[0,0,0], [3,0,0], [0,3,0], [0,0,-3]])
+box = np.float32([[0,0,0],[2,0,0],[0,2,0],[2,2,0],[0,0,-2],[2,0,-2],[0,2,-2],[2,2,-2]])
 
-def drawAxes(img, corners, imgpts):
-    def tupleofInts(arr):
-        return tuple(int(x) for x in arr)
-    corner = tupleofInts(corners[0].ravel())
-    img = cv.line(img,corner,tupleofInts(imgpts[0].ravel()),(255,0,0),2)
-    img = cv.line(img,corner,tupleofInts(imgpts[1].ravel()),(0,255,0),2)
-    img = cv.line(img,corner,tupleofInts(imgpts[2].ravel()),(0,0,255),2)
-    return img
+def video(cc, cameraMatrix, dist, factor=1):
+    cap = cv.VideoCapture(0)
+    while True:
+        ret, frame = cap.read()
+        scaled_frame = cv.resize(frame,None,fx=factor, fy=factor,interpolation=cv.INTER_LINEAR)
 
-#testing phase
+        gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+        corners, detected = cc.cornerFinder(scaled_frame, isvideo=True, scaling=factor)
+
+        if detected:
+            scaled_corners = corners/factor
+            cv.drawChessboardCorners(frame,cc.chessboard.boardsize, scaled_corners,True)
+            _, rvecs, tvecs = cv.solvePnP(cc.chessboard.objpoints, scaled_corners, cameraMatrix, dist) 
+            imgpoints, _ = cv.projectPoints(box, rvecs, tvecs, cameraMatrix, dist)
+            frame = D3.drawBox(frame,imgpoints) 
+
+        cv.imshow('frame', frame)
+        if cv.waitKey(1) == ord('q'):
+            break
+
+#calibration
+path = "Images"
 chessboard = Chessboard((9,6),1)
-ret, cameraMatrix, dist, rvecs, tvecs = calibrate(1,3,chessboard)
-print(dist)
-print(ret)
 
-axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
+if True: #True reruns the calibration and saves new intrinsic values
+    cc = CameraCalibration(path,chessboard)
+    cameraMatrix, dist, rvecs, tvecs = cc.calibrate()
+    print(cameraMatrix)
+    with open('intrinsics.pckl', 'wb') as f: #Store intrinsic camera values
+        pickle.dump([cameraMatrix, dist, rvecs, tvecs], f)
+        
+#testing phase
+with open('intrinsics.pckl', 'rb') as f: #Load intrinsic camera values
+    cameraMatrix, dist, rvecs,tvecs = pickle.load(f)
 
-testimg = cv.imread("Images/10.jpg")
-cbf = ChessboardFinder(testimg,chessboard)
-corners = cbf.cornerFinder()
+#testimg = cv.imread("Images/2.jpg")
+testimg = cv.imread("Chessboardtest.jpg")
 
-_,rvecs, tvecs = cv.solvePnP(chessboard.objpoints, corners, cameraMatrix, dist)
-imgpts, _ = cv.projectPoints(axis, rvecs, tvecs, cameraMatrix, dist)
+print(chessboard.objpoints.shape)
+#Finds corners and rotation/translation vectors
+cc = CameraCalibration("",chessboard)
+corners, _ = cc.cornerFinder(testimg)
 
-testimg = drawAxes(testimg,corners,imgpts)
-cv.imshow("image:",testimg)
-cv.waitKey(0)
-cv.destroyAllWindows()
+if False:
+    _, rvecs, tvecs = cv.solvePnP(cc.chessboard.objpoints, corners, cameraMatrix, dist)
+
+    imgpoints, _ = cv.projectPoints(box, rvecs, tvecs, cameraMatrix, dist)
+    testimg = D3.drawBox(testimg,imgpoints)
+
+    imgpoints, _ = cv.projectPoints(axis, rvecs, tvecs, cameraMatrix, dist)
+    testimg = D3.drawAxes(testimg,imgpoints)
+    cv.imshow("image:",testimg)
+    cv.waitKey(0)
+    cv.destroyAllWindows()
+
+    video(cc, cameraMatrix, dist, factor=1) #factor=1: no rescaling. factor<1: speeds up video but decreases accuracy
+
+#TODO: Improve accuracy (pixel optimization), Choice tasks, Add Uncalibrated Images
