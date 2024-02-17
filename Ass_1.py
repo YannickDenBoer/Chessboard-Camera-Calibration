@@ -5,39 +5,31 @@ from manim.utils.file_ops import open_file as open_media_file
 import os
 import pickle
 
-# obtain the camera position in world space and render manim scene
-def run3dplot(objpoints, imgpoints, gray):
+# Obtain the camera position in world space
+def getWorldCameraPos(objpoints, imgpoints, gray):
     ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera([objpoints], [imgpoints], gray.shape[::-1], None, None)
     _,rvecs, tvecs = cv.solvePnP(objpoints, imgpoints, cameraMatrix, dist)
     rotM = cv.Rodrigues(rvecs)[0]
     initCamPos = -np.matrix(rotM).T * np.matrix(tvecs)
-    global camPos
-    camPos = [number for matrix in initCamPos for number in matrix.flat]
-    scene = Plot3D()
-    scene.render()
-    open_media_file(scene.renderer.file_writer.image_file_path)
+    return [number for matrix in initCamPos for number in matrix.flat]
 
+# Create 3D scene and plot the chessboard corners and camera
 class Plot3D(ThreeDScene):
     def construct(self):
-        remapped_cp = [camPos[0], camPos[2], camPos[1]]
-        cameraLabel = Text('(' + str(round(camPos[0],2)) + ', ' + str(round(camPos[1], 2)) + ', ' + str(round(camPos[2], 2)) + ')').scale(0.5)
-        self.add_fixed_in_frame_mobjects(cameraLabel)
-        cameraLabel.to_corner(DR)
-        self.set_camera_orientation(phi=80 * DEGREES, theta=-225 * DEGREES, zoom=0.4, frame_center=[0,0,remapped_cp[2] / 4])
-        axes = ThreeDAxes(x_length=40, y_length=40, z_length=40)
-        camPoint = Dot3D(remapped_cp, radius = 0.2, color=BLUE)
-        labels = axes.get_axis_labels(Tex("x").scale(2), Text("z").scale(2), Text("y").scale(2))
-        self.add(axes, camPoint, labels)
+        for i, camPos in enumerate(allcamerapos):
+            camLabel = Text('cam' + str(i+1) + ': (' + str(round(camPos[0],2)) + ', ' + str(round(camPos[1], 2)) + ', ' + str(round(camPos[2], 2)) + ')').scale(0.15)
+            #cameraLabel.to_corner(DR)
+            camPoint = Dot3D(camPos, radius = 0.1, color=BLUE)
+            camLabel.next_to(camPoint, UP)
+            self.add(camPoint)
+            self.add_fixed_orientation_mobjects(camLabel)
 
-        remapped_pts = []
+        self.set_camera_orientation(phi=280 * DEGREES, theta=-45 * DEGREES, zoom=0.25, frame_center=[3,0,-8])
+        axes = ThreeDAxes(x_range=[-20,20,5], y_range=[-20,20,5], z_range=[-20,20,5], x_length=40, y_length=40, z_length=40, axis_config={"include_numbers": True})
+        labels = axes.get_axis_labels(Tex("x").scale(2), Text("y").scale(2), Text("z").scale(2))
+        self.add(axes, labels)
         for co in chessboard.objpoints:
-            remapped_pts.append([co[0], co[2], co[1]])
-            self.add(Dot3D(remapped_pts[-1], radius= 0.05, color=RED))
-
-        self.add(Arrow3D(remapped_cp, remapped_pts[0], thickness=0.03, color=YELLOW))
-        self.add(Arrow3D(remapped_cp, remapped_pts[8], thickness=0.03, color=GREEN))
-        self.add(Arrow3D(remapped_cp, remapped_pts[53], thickness=0.03, color=YELLOW))
-        self.add(Arrow3D(remapped_cp, remapped_pts[45], thickness=0.03, color=GREEN))
+            self.add(Dot3D(co, radius= 0.05, color=RED))
 
 class CameraCalibration():
     def __init__(self, path, chessboard):
@@ -99,6 +91,8 @@ class CameraCalibration():
     def calibrate(self):
         allobjpoints = []
         allimgpoints = []
+        global allcamerapos
+        allcamerapos = []
         for filename in os.listdir(os.path.join(os.getcwd(),self.path)):
             f = os.path.join(path,filename)
             print(f)
@@ -113,7 +107,7 @@ class CameraCalibration():
 
             allobjpoints.append(chessboard.objpoints)
             allimgpoints.append(self.corners)
-            # run3dplot(chessboard.objpoints, self.corners, self.gray)
+            allcamerapos.append(getWorldCameraPos(chessboard.objpoints, self.corners, self.gray))
 
         _, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera(allobjpoints, allimgpoints, self.gray.shape[::-1], None, None)
         return cameraMatrix, dist, rvecs, tvecs
@@ -176,7 +170,7 @@ def video(cc, cameraMatrix, dist, factor=1):
             break
 
 # Initialisation:
-path = "Images"
+path = "Images/run2"
 chessboard = Chessboard((9,6),1)
 
 # ====== Calibration ======
@@ -188,14 +182,18 @@ if True:
     print(cameraMatrix)
     with open('intrinsics.pckl', 'wb') as f: #Store intrinsic camera values
         pickle.dump([cameraMatrix, dist, rvecs, tvecs], f)
-        
+
+    # plot all camera world points
+    scene = Plot3D()
+    scene.render()
+    open_media_file(scene.renderer.file_writer.image_file_path)
+
 # ====== Testing ======
-        
 # Load intrinsic camera values
-with open('intrinsics.pckl', 'rb') as f: 
+with open('intrinsics.pckl', 'rb') as f:
     cameraMatrix, dist, rvecs,tvecs = pickle.load(f)
 
-testimg = cv.imread("Images/3.jpg")
+testimg = cv.imread("Images/test.jpg")
 
 # Find corners
 cc = CameraCalibration("",chessboard)
