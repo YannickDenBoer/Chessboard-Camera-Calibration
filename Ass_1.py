@@ -46,13 +46,15 @@ class CameraCalibration():
         self.boardsize = chessboard.boardsize
         self.corners = []
         self.gray = []
+        self.criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
     def cornerFinder(self, image, isvideo=False, scaling=1):
         image_gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
         self.gray = image_gray
-        detected, self.corners = cv.findChessboardCorners(image_gray, chessboard.boardsize, None) #corners from bottom-left to top-right
+        detected, corners1 = cv.findChessboardCorners(image_gray, chessboard.boardsize, None) #corners from bottom-left to top-right
         if not isvideo:
             if detected:
+                self.corners = cv.cornerSubPix(image_gray, corners1, (5,5), (-1,-1), self.criteria)
                 cv.drawChessboardCorners(image, chessboard.boardsize, self.corners,True)
             else: # manual calibration
                 clicked_corners = []
@@ -61,6 +63,8 @@ class CameraCalibration():
                 cv.setMouseCallback('Image', self.leftClick, [image, clicked_corners])
                 cv.waitKey(0)
                 cv.destroyAllWindows
+        else:
+            self.corners = corners1
         return self.corners, detected
     
     def leftClick(self, event, x, y, flags, params): 
@@ -80,8 +84,9 @@ class CameraCalibration():
 
                     destpts = np.array(params[1],dtype=np.float32)
                     mat = cv.getPerspectiveTransform(objcorners,destpts)
-                    self.corners = cv.perspectiveTransform(objpoints2d,mat)
-                    
+                    corners1 = cv.perspectiveTransform(objpoints2d,mat)
+                    self.corners = cv.cornerSubPix(self.gray, corners1, (5,5), (-1,-1), self.criteria)
+
                     cv.drawChessboardCorners(params[0], chessboard.boardsize, self.corners,True)
                     cv.imshow("Image", params[0])
                     cv.waitKey(0)
@@ -161,7 +166,7 @@ def video(cc, cameraMatrix, dist, factor=1):
         corners, detected = cc.cornerFinder(scaled_frame, isvideo=True, scaling=factor)
 
         if detected:
-            scaled_corners = corners/factor
+            scaled_corners = np.array(corners/factor,dtype=np.float32)
             cv.drawChessboardCorners(frame,cc.chessboard.boardsize, scaled_corners,True)
             _, rvecs, tvecs = cv.solvePnP(cc.chessboard.objpoints, scaled_corners, cameraMatrix, dist) 
             imgpoints, _ = cv.projectPoints(box, rvecs, tvecs, cameraMatrix, dist)
@@ -187,7 +192,7 @@ with open('intrinsics.pckl', 'rb') as f: #Load intrinsic camera values
     cameraMatrix, dist, rvecs,tvecs = pickle.load(f)
 
 #testimg = cv.imread("Images/2.jpg")
-testimg = cv.imread("Chessboardtest.jpg")
+testimg = cv.imread("Images/3.jpg")
 
 #Find corners and rotation/translation vectors
 cc = CameraCalibration("",chessboard)
@@ -207,4 +212,4 @@ if True:
 
     video(cc, cameraMatrix, dist, factor=1) #factor=1: no rescaling. factor<1: speeds up video but decreases accuracy
 
-#TODO: Improve accuracy (pixel optimization), Choice tasks, Add Uncalibrated Images
+#TODO: Improve accuracy (pixel optimization)
