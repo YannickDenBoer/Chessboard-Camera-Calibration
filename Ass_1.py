@@ -137,7 +137,7 @@ def video(cc, cameraMatrix, dist, factor=1):
 path = "Images"
 chessboard = Chessboard((9,6),1)
 
-if True: #True reruns the calibration and saves new intrinsic values
+if False: #True reruns the calibration and saves new intrinsic values
     cc = CameraCalibration(path,chessboard)
     cameraMatrix, dist, rvecs, tvecs = cc.calibrate()
     print(cameraMatrix)
@@ -151,12 +151,11 @@ with open('intrinsics.pckl', 'rb') as f: #Load intrinsic camera values
 #testimg = cv.imread("Images/2.jpg")
 testimg = cv.imread("Chessboardtest.jpg")
 
-print(chessboard.objpoints.shape)
-#Finds corners and rotation/translation vectors
+#Find corners and rotation/translation vectors
 cc = CameraCalibration("",chessboard)
 corners, _ = cc.cornerFinder(testimg)
 
-if False:
+if True:
     _, rvecs, tvecs = cv.solvePnP(cc.chessboard.objpoints, corners, cameraMatrix, dist)
 
     imgpoints, _ = cv.projectPoints(box, rvecs, tvecs, cameraMatrix, dist)
