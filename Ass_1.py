@@ -16,7 +16,7 @@ class CameraCalibration():
         self.gray = image_gray
         detected, self.corners = cv.findChessboardCorners(image_gray, chessboard.boardsize, None) #corners from bottom-left to top-right
         if not isvideo:
-            if not detected:
+            if detected:
                 cv.drawChessboardCorners(image, chessboard.boardsize, self.corners,True)
             else: # manual calibration
                 clicked_corners = []
@@ -39,12 +39,13 @@ class CameraCalibration():
                 if len(params[1]) == 4:
                     #self.corners = np.array(self.findImgPoints(params[1])).astype('float32')
                     
-                    objcorners = np.array([[chessboard.boardsize[0]-1,0], [chessboard.boardsize[0]-1,chessboard.boardsize[1]-1], [0,0], [0, chessboard.boardsize[1]-1]],dtype=np.float32) #bl, br, tl, tr -> br, tl, bl, tr
+                    objcorners = np.array([[chessboard.boardsize[0]-1,0], [chessboard.boardsize[0]-1,chessboard.boardsize[1]-1], [0,0], [0, chessboard.boardsize[1]-1]],dtype=np.float32) #br, tl, bl, tr
                     objpoints2d = np.array([chessboard.objpoints[:,:2]])
 
                     destpts = np.array(params[1],dtype=np.float32)
                     mat = cv.getPerspectiveTransform(objcorners,destpts)
                     self.corners = cv.perspectiveTransform(objpoints2d,mat)
+                    
                     cv.drawChessboardCorners(params[0], chessboard.boardsize, self.corners,True)
                     cv.imshow("Image", params[0])
                     cv.waitKey(0)
@@ -55,7 +56,7 @@ class CameraCalibration():
         for i in range(self.boardsize[1]):
             for j in range(self.boardsize[0]-1, -1, -1):
                 # order: bottom left, top left, bottom right, top right
-                a,b,c,d = np.array(cornerpoints[0:4])
+                a,b,c,d = np.array(cornerpoints[0:4]) #bl, tl, br, tr
                 p = a+i/(self.boardsize[1]-1) * (b-a)
                 q = c+i/(self.boardsize[1]-1) * (d-c)
                 point = p+j/(self.boardsize[0]-1) *(q-p) #/7
@@ -134,9 +135,9 @@ def video(cc, cameraMatrix, dist, factor=1):
 
 #calibration
 path = "Images"
-chessboard = Chessboard((7,7),1)
+chessboard = Chessboard((9,6),1)
 
-if False: #True reruns the calibration and saves new intrinsic values
+if True: #True reruns the calibration and saves new intrinsic values
     cc = CameraCalibration(path,chessboard)
     cameraMatrix, dist, rvecs, tvecs = cc.calibrate()
     print(cameraMatrix)
