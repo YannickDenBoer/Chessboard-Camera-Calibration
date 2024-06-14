@@ -1,5 +1,6 @@
 # Camera Calibration
 This repository calibrates the intrinsic parameters of a camera by looping over an image folder containing images of a 9x5 chessboard. The program returns a test image with 3D cube and axes drawn from world origin.
+This code was submitted for the Computer Vision course at Utrecht University
 - Optional: enable real-time cube detection on computer webcam
 ![test image preview](image.png)
 
