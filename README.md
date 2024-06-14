@@ -1,7 +1,7 @@
 # Camera Calibration
 This repository calibrates the intrinsic parameters of a camera by looping over an image folder containing images of a 9x5 chessboard. The program returns a test image with 3D cube and axes drawn from world origin.
 - Optional: enable real-time cube detection on computer webcam
-![[Pasted image 20240614142250.png|500]]
+![test image preview](image.png)
 
 ## Usage
 - For execution run `main.py`. Make sure to insert `img_name` and `calibrate` and `live` to True if required
